@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>wifi-heatmap</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>wifi-heatmap</h1>
+      <p id="meta">Loading Wi-Fi info...</p>
+    </header>
+
+    <section class="controls">
+      <label class="file-input">
+        Upload floor plan
+        <input type="file" id="floorplan" accept="image/*" />
+      </label>
+      <label>
+        Band filter
+        <select id="bandFilter">
+          <option value="all">All</option>
+          <option value="2.4">2.4 GHz</option>
+          <option value="5">5 GHz</option>
+        </select>
+      </label>
+      <button id="reset">Reset samples</button>
+    </section>
+
+    <section class="tabs">
+      <button class="tab active" data-tab="heatmap">Heatmap</button>
+      <button class="tab" data-tab="spectrum" id="spectrumTab" hidden>Spectrum</button>
+    </section>
+
+    <main>
+      <section id="heatmap" class="panel active">
+        <div class="canvas-wrapper">
+          <img id="floorplanImage" alt="Floor plan" />
+          <canvas id="heatmapCanvas"></canvas>
+        </div>
+        <p class="hint">Click on the map to record a sample.</p>
+      </section>
+
+      <section id="spectrum" class="panel">
+        <canvas id="spectrumCanvas" width="800" height="280"></canvas>
+        <p class="hint">Polling RSSI every 500ms.</p>
+      </section>
+    </main>
+
+    <script type="module" src="/main.js"></script>
+  </body>
+</html>
