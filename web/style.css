@@ -1,0 +1,106 @@
+:root {
+  color-scheme: light;
+  font-family: "Inter", system-ui, sans-serif;
+  color: #111827;
+  background: #f8fafc;
+}
+
+body {
+  margin: 0;
+  padding: 24px;
+}
+
+header {
+  margin-bottom: 16px;
+}
+
+h1 {
+  margin: 0 0 8px;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.file-input {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  border: 1px dashed #94a3b8;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.file-input input {
+  display: none;
+}
+
+button {
+  border: none;
+  background: #4f46e5;
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.tab {
+  background: #e2e8f0;
+  color: #1f2937;
+}
+
+.tab.active {
+  background: #4f46e5;
+  color: #fff;
+}
+
+.panel {
+  display: none;
+}
+
+.panel.active {
+  display: block;
+}
+
+.canvas-wrapper {
+  position: relative;
+  display: inline-block;
+  border: 1px solid #cbd5f5;
+  background: #fff;
+  min-width: 360px;
+  min-height: 240px;
+}
+
+#floorplanImage {
+  display: block;
+  max-width: 100%;
+}
+
+#heatmapCanvas {
+  position: absolute;
+  inset: 0;
+}
+
+#spectrumCanvas {
+  width: 100%;
+  max-width: 900px;
+  border: 1px solid #cbd5f5;
+  background: #fff;
+}
+
+.hint {
+  color: #475569;
+  font-size: 0.9rem;
+}
