@@ -26,6 +26,18 @@
         </select>
       </label>
       <label>
+        Metric
+        <select id="metricSelect"></select>
+      </label>
+      <label class="inline-toggle">
+        <input type="checkbox" id="autoScaleToggle" />
+        Auto scale
+      </label>
+      <label class="inline-toggle">
+        <input type="checkbox" id="contrastToggle" />
+        High contrast
+      </label>
+      <label>
         Project
         <select id="projectSelect"></select>
       </label>
@@ -47,6 +59,14 @@
           <canvas id="heatmapCanvas"></canvas>
           <canvas id="pointsCanvas"></canvas>
           <div id="sampleTooltip" class="tooltip" hidden></div>
+        </div>
+        <div class="legend" id="metricLegend">
+          <div class="legend-bar"></div>
+          <div class="legend-labels">
+            <span id="legendBad">Bad</span>
+            <span id="legendGood">Good</span>
+          </div>
+          <p class="legend-note" id="legendNote"></p>
         </div>
         <p class="hint">Click on the map to record a sample.</p>
       </section>

@@ -47,6 +47,7 @@ Samples and floor plans are stored per project in `server/data/`.
 
 ## API
 - `GET /api/meta` → `{ ssid, band, rssi, mode }`
+- `GET /api/metrics` → available metrics for heatmap
 - `GET /api/scan` → channel scan (macOS only, cached)
 - `GET /api/channels` → congestion report (macOS only)
 - `GET /api/samples` → `[]`
@@ -57,6 +58,14 @@ Samples and floor plans are stored per project in `server/data/`.
 
 ## Calibration
 RSSI values are typically between **-30 dBm (very strong)** and **-90 dBm (weak)**. Aim to sample at multiple points around a room to get a smooth heatmap.
+
+## Metric heatmap (macOS)
+You can switch the heatmap to plot different metrics:
+- **RSSI**: raw signal strength.
+- **SNR**: signal-to-noise ratio (RSSI - Noise).
+- **Latency/Jitter/Loss**: ping to the local router to isolate Wi-Fi quality.
+
+Latency, jitter, and loss are based on pinging the gateway, which avoids external internet effects.
 
 ## Channels diagnostic (macOS)
 - The scan estimates congestion by weighting nearby networks by RSSI (stronger = higher impact).

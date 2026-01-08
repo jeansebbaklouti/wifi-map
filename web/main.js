@@ -1,6 +1,9 @@
 const API_BASE = "http://localhost:8787";
 const metaEl = document.getElementById("meta");
 const bandFilterEl = document.getElementById("bandFilter");
+const metricSelectEl = document.getElementById("metricSelect");
+const autoScaleEl = document.getElementById("autoScaleToggle");
+const contrastEl = document.getElementById("contrastToggle");
 const resetEl = document.getElementById("reset");
 const togglePointsEl = document.getElementById("togglePoints");
 const projectSelectEl = document.getElementById("projectSelect");
@@ -16,6 +19,9 @@ const heatmapBlurCtx = heatmapBlur.getContext("2d");
 const pointsCanvas = document.getElementById("pointsCanvas");
 const pointsCtx = pointsCanvas.getContext("2d");
 const tooltipEl = document.getElementById("sampleTooltip");
+const legendBadEl = document.getElementById("legendBad");
+const legendGoodEl = document.getElementById("legendGood");
+const legendNoteEl = document.getElementById("legendNote");
 const spectrumCanvas = document.getElementById("spectrumCanvas");
 const spectrumCtx = spectrumCanvas.getContext("2d");
 const spectrumTab = document.getElementById("spectrumTab");
@@ -38,10 +44,15 @@ const heatmapBlurRadius = 24;
 const heatmapGridStep = 24;
 const heatmapIdwPower = 2;
 const heatmapMaxDistance = 220;
-const heatmapContrast = 1.5;
+const heatmapContrastBase = 1.5;
+const heatmapContrastBoost = 2.0;
 let showPoints = false;
 let currentProjectId = "default";
 let latestScan = null;
+let metrics = [];
+let activeMetricKey = "rssi_dbm";
+let useAutoScale = false;
+let useHighContrast = false;
 
 function setMetaText(info) {
   if (!info) return;
@@ -70,6 +81,13 @@ async function fetchMeta() {
     setMetaText({ ssid: null, band: null, rssi: null, mode: "heatmap" });
     return null;
   }
+}
+
+async function fetchMetrics() {
+  const res = await fetch(`${API_BASE}/api/metrics`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return Array.isArray(data.metrics) ? data.metrics : [];
 }
 
 async function fetchScan(force = false) {
@@ -126,11 +144,66 @@ function resizeCanvasToImage() {
   pointsCanvas.style.height = `${floorplanImage.naturalHeight}px`;
 }
 
-function normalizeRssi(rssi) {
-  if (typeof rssi !== "number") return 0;
-  const clamped = Math.max(-90, Math.min(-30, rssi));
-  const t = (clamped + 90) / 60;
-  return Math.pow(t, heatmapContrast);
+function getMetricConfig(key) {
+  return metrics.find((metric) => metric.key === key) || null;
+}
+
+function coerceNumber(value) {
+  if (typeof value === "number") return value;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getMetricValue(sample, key) {
+  if (!sample) return null;
+  if (key === "rssi_dbm" && typeof sample.rssi_dbm !== "number") {
+    return typeof sample.rssi === "number" ? sample.rssi : null;
+  }
+  return coerceNumber(sample[key]);
+}
+
+function getContrast() {
+  return useHighContrast ? heatmapContrastBoost : heatmapContrastBase;
+}
+
+function getMetricRange(metricKey) {
+  const values = getFilteredSamples()
+    .map((sample) => getMetricValue(sample, metricKey))
+    .filter((val) => typeof val === "number");
+  if (!values.length) return null;
+  return {
+    min: Math.min(...values),
+    max: Math.max(...values),
+  };
+}
+
+function normalizeMetricValue(value, metric, range) {
+  if (typeof value !== "number" || !metric) return null;
+  let good = coerceNumber(metric.good);
+  let bad = coerceNumber(metric.bad);
+  if (useAutoScale && range && Number.isFinite(range.min) && Number.isFinite(range.max)) {
+    good = range.max;
+    bad = range.min;
+  }
+  if (!Number.isFinite(good) || !Number.isFinite(bad) || good === bad) return null;
+  let t = 0;
+  if (good > bad) {
+    t = (value - bad) / (good - bad);
+  } else {
+    t = (bad - value) / (bad - good);
+  }
+  const clamped = Math.max(0, Math.min(1, t));
+  return Math.pow(clamped, getContrast());
+}
+
+function formatMetricValue(value, metric) {
+  if (!metric) return "unknown";
+  if (typeof value !== "number") return "unknown";
+  if (metric.key.endsWith("_ms")) return `${value.toFixed(1)} ms`;
+  if (metric.key.endsWith("_pct")) return `${value.toFixed(1)}%`;
+  if (metric.key.endsWith("_dbm")) return `${value} dBm`;
+  if (metric.key.endsWith("_db")) return `${value.toFixed(1)} dB`;
+  return `${value}`;
 }
 
 function buildHeatmapPalette() {
@@ -188,9 +261,24 @@ function colorizeHeatmap() {
 function drawPoints(points) {
   pointsCtx.clearRect(0, 0, pointsCanvas.width, pointsCanvas.height);
   if (!showPoints) return;
+  const metric = getMetricConfig(activeMetricKey);
+  const range = useAutoScale ? getMetricRange(activeMetricKey) : null;
   points.forEach((sample) => {
-    const intensity = normalizeRssi(sample.rssi);
-    const color = intensity ? colorFromIntensity(intensity, 0.85) : "rgba(107,114,128,0.7)";
+    const value = getMetricValue(sample, activeMetricKey);
+    const intensity = normalizeMetricValue(value, metric, range);
+    if (intensity === null) {
+      const size = 6;
+      pointsCtx.strokeStyle = "rgba(107,114,128,0.7)";
+      pointsCtx.lineWidth = 1.5;
+      pointsCtx.beginPath();
+      pointsCtx.moveTo(sample.x - size, sample.y - size);
+      pointsCtx.lineTo(sample.x + size, sample.y + size);
+      pointsCtx.moveTo(sample.x + size, sample.y - size);
+      pointsCtx.lineTo(sample.x - size, sample.y + size);
+      pointsCtx.stroke();
+      return;
+    }
+    const color = colorFromIntensity(intensity, 0.85);
     pointsCtx.beginPath();
     pointsCtx.fillStyle = color;
     pointsCtx.arc(sample.x, sample.y, 5, 0, Math.PI * 2);
@@ -208,8 +296,11 @@ function setTooltip(sample, x, y) {
   }
   const ssid = sample.ssid || "unknown";
   const band = sample.band ? `${sample.band} GHz` : "unknown";
-  const rssi = typeof sample.rssi === "number" ? `${sample.rssi} dBm` : "unknown";
-  tooltipEl.textContent = `${ssid} | ${band} | ${rssi}`;
+  const metric = getMetricConfig(activeMetricKey);
+  const metricValue = getMetricValue(sample, activeMetricKey);
+  const metricLabel = metric ? metric.label : activeMetricKey;
+  const formatted = formatMetricValue(metricValue, metric);
+  tooltipEl.textContent = `${ssid} | ${band} | ${metricLabel}: ${formatted}`;
   tooltipEl.style.left = `${x + 12}px`;
   tooltipEl.style.top = `${y + 12}px`;
   tooltipEl.hidden = false;
@@ -230,7 +321,7 @@ function findClosestSample(x, y, points) {
   return closestDist <= 10 ? closest : null;
 }
 
-function estimateRssiAt(x, y, points) {
+function estimateMetricAt(x, y, points, metricKey) {
   let weightSum = 0;
   let valueSum = 0;
   const maxDistSq = heatmapMaxDistance * heatmapMaxDistance;
@@ -241,8 +332,10 @@ function estimateRssiAt(x, y, points) {
     if (distSq > maxDistSq) continue;
     const dist = Math.sqrt(distSq) || 1;
     const weight = 1 / Math.pow(dist, heatmapIdwPower);
+    const value = getMetricValue(point, metricKey);
+    if (typeof value !== "number") continue;
     weightSum += weight;
-    valueSum += weight * point.rssi;
+    valueSum += weight * value;
   }
   if (!weightSum) return null;
   return valueSum / weightSum;
@@ -253,13 +346,20 @@ function drawHeatmap() {
   heatmapBufferCtx.clearRect(0, 0, heatmapBuffer.width, heatmapBuffer.height);
   heatmapBlurCtx.clearRect(0, 0, heatmapBlur.width, heatmapBlur.height);
   const filtered = getFilteredSamples();
-  const points = filtered.filter((sample) => typeof sample.rssi === "number");
-  if (!points.length) return;
+  const metric = getMetricConfig(activeMetricKey);
+  const range = useAutoScale ? getMetricRange(activeMetricKey) : null;
+  const points = filtered.filter(
+    (sample) => typeof getMetricValue(sample, activeMetricKey) === "number"
+  );
+  if (!points.length) {
+    drawPoints(filtered);
+    return;
+  }
   for (let y = 0; y <= heatmapBuffer.height; y += heatmapGridStep) {
     for (let x = 0; x <= heatmapBuffer.width; x += heatmapGridStep) {
-      const rssi = estimateRssiAt(x, y, points);
-      if (rssi === null) continue;
-      const intensity = normalizeRssi(rssi);
+      const value = estimateMetricAt(x, y, points, activeMetricKey);
+      if (value === null) continue;
+      const intensity = normalizeMetricValue(value, metric, range);
       if (!intensity) continue;
       const radius = heatmapGridStep * 1.2;
       const gradient = heatmapBufferCtx.createRadialGradient(
@@ -402,6 +502,38 @@ function renderNetworkList(container, networks) {
   });
 }
 
+function renderMetricOptions(metricList) {
+  metricSelectEl.innerHTML = "";
+  metricList.forEach((metric) => {
+    const option = document.createElement("option");
+    option.value = metric.key;
+    option.textContent = metric.label;
+    metricSelectEl.appendChild(option);
+  });
+}
+
+function hasMetricData(key) {
+  return samples.some((sample) => typeof getMetricValue(sample, key) === "number");
+}
+
+function updateLegend() {
+  const metric = getMetricConfig(activeMetricKey);
+  if (!metric) return;
+  if (useAutoScale) {
+    const range = getMetricRange(activeMetricKey);
+    const minLabel = range ? formatMetricValue(range.min, metric) : "n/a";
+    const maxLabel = range ? formatMetricValue(range.max, metric) : "n/a";
+    legendBadEl.textContent = `Min (${minLabel})`;
+    legendGoodEl.textContent = `Max (${maxLabel})`;
+  } else {
+    legendBadEl.textContent = `Bad (${metric.bad})`;
+    legendGoodEl.textContent = `Good (${metric.good})`;
+  }
+  legendNoteEl.textContent = hasMetricData(activeMetricKey)
+    ? ""
+    : "No samples for this metric yet.";
+}
+
 function renderChannels(report) {
   if (!report) return;
   const reco24 = report.band24?.recommended;
@@ -512,6 +644,7 @@ async function loadProject(projectId) {
   await fetchFloorplan();
   await fetchSamples();
   drawHeatmap();
+  updateLegend();
 }
 
 function setupPointToggle() {
@@ -548,6 +681,41 @@ async function init() {
   });
   resetEl.addEventListener("click", resetSamples);
   bandFilterEl.addEventListener("change", drawHeatmap);
+  metrics = await fetchMetrics();
+  if (!metrics.length) {
+    metrics = [
+      { key: "rssi_dbm", label: "RSSI (dBm)", good: -50, bad: -80 },
+      { key: "snr_db", label: "SNR (dB)", good: 25, bad: 10 },
+      { key: "ping_avg_ms", label: "Latency to router (ms)", good: 2, bad: 30 },
+      { key: "ping_jitter_ms", label: "Jitter (ms)", good: 2, bad: 20 },
+      { key: "ping_loss_pct", label: "Packet loss (%)", good: 0, bad: 10 },
+    ];
+  }
+  renderMetricOptions(metrics);
+  const savedMetric = localStorage.getItem("wifi-heatmap-metric");
+  activeMetricKey = metrics.find((metric) => metric.key === savedMetric)?.key || "rssi_dbm";
+  metricSelectEl.value = activeMetricKey;
+  metricSelectEl.addEventListener("change", () => {
+    activeMetricKey = metricSelectEl.value;
+    localStorage.setItem("wifi-heatmap-metric", activeMetricKey);
+    updateLegend();
+    drawHeatmap();
+  });
+  useAutoScale = localStorage.getItem("wifi-heatmap-autoscale") === "1";
+  useHighContrast = localStorage.getItem("wifi-heatmap-contrast") === "1";
+  autoScaleEl.checked = useAutoScale;
+  contrastEl.checked = useHighContrast;
+  autoScaleEl.addEventListener("change", () => {
+    useAutoScale = autoScaleEl.checked;
+    localStorage.setItem("wifi-heatmap-autoscale", useAutoScale ? "1" : "0");
+    updateLegend();
+    drawHeatmap();
+  });
+  contrastEl.addEventListener("change", () => {
+    useHighContrast = contrastEl.checked;
+    localStorage.setItem("wifi-heatmap-contrast", useHighContrast ? "1" : "0");
+    drawHeatmap();
+  });
   const savedProject = localStorage.getItem("wifi-heatmap-project");
   const projects = await fetchProjects();
   renderProjects(projects);
@@ -571,6 +739,7 @@ async function init() {
   });
   await fetchMeta();
   await loadProject(initialProject);
+  updateLegend();
 }
 
 init();
