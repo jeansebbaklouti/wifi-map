@@ -50,6 +50,11 @@ button {
   cursor: pointer;
 }
 
+button.secondary {
+  background: #e2e8f0;
+  color: #1f2937;
+}
+
 .tabs {
   display: flex;
   gap: 8px;
@@ -93,6 +98,24 @@ button {
   inset: 0;
 }
 
+#pointsCanvas {
+  position: absolute;
+  inset: 0;
+}
+
+.tooltip {
+  position: absolute;
+  z-index: 2;
+  padding: 6px 8px;
+  background: rgba(17, 24, 39, 0.92);
+  color: #f8fafc;
+  font-size: 12px;
+  border-radius: 6px;
+  pointer-events: none;
+  white-space: nowrap;
+  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.2);
+}
+
 #spectrumCanvas {
   width: 100%;
   max-width: 900px;
@@ -103,4 +126,74 @@ button {
 .hint {
   color: #475569;
   font-size: 0.9rem;
+}
+
+.channels-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.channels-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.channels-card {
+  background: #fff;
+  border: 1px solid #cbd5f5;
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+
+.channels-reco {
+  margin: 6px 0 12px;
+  font-weight: 600;
+}
+
+.channels-scores {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.score-row {
+  display: grid;
+  grid-template-columns: 36px 1fr 40px;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+}
+
+.score-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.score-bar > span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #22c55e, #f59e0b, #ef4444);
+}
+
+.channels-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 0.85rem;
+  color: #334155;
+}
+
+.channels-list li {
+  padding: 4px 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.channels-list li:last-child {
+  border-bottom: none;
 }
