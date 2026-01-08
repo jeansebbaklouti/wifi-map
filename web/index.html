@@ -9,7 +9,7 @@
   <body>
     <header>
       <h1>wifi-heatmap</h1>
-      <p id="meta">Loading Wi-Fi info...</p>
+      <p id="meta">SSID: unknown | Band: unknown | RSSI: unknown | mode: heatmap</p>
     </header>
 
     <section class="controls">
@@ -25,12 +25,19 @@
           <option value="5">5 GHz</option>
         </select>
       </label>
+      <label>
+        Project
+        <select id="projectSelect"></select>
+      </label>
+      <button id="newProject" class="secondary">New project</button>
+      <button id="togglePoints" class="secondary">Show points</button>
       <button id="reset">Reset samples</button>
     </section>
 
     <section class="tabs">
       <button class="tab active" data-tab="heatmap">Heatmap</button>
       <button class="tab" data-tab="spectrum" id="spectrumTab" hidden>Spectrum</button>
+      <button class="tab" data-tab="channels" id="channelsTab">Channels</button>
     </section>
 
     <main>
@@ -38,6 +45,8 @@
         <div class="canvas-wrapper">
           <img id="floorplanImage" alt="Floor plan" />
           <canvas id="heatmapCanvas"></canvas>
+          <canvas id="pointsCanvas"></canvas>
+          <div id="sampleTooltip" class="tooltip" hidden></div>
         </div>
         <p class="hint">Click on the map to record a sample.</p>
       </section>
@@ -45,6 +54,27 @@
       <section id="spectrum" class="panel">
         <canvas id="spectrumCanvas" width="800" height="280"></canvas>
         <p class="hint">Polling RSSI every 500ms.</p>
+      </section>
+
+      <section id="channels" class="panel">
+        <div class="channels-header">
+          <button id="scanNow">Scan now</button>
+          <p class="hint" id="scanMeta">No scan yet.</p>
+        </div>
+        <div class="channels-grid">
+          <div class="channels-card">
+            <h3>2.4 GHz</h3>
+            <p class="channels-reco" id="reco24">-</p>
+            <div class="channels-scores" id="scores24"></div>
+            <ul class="channels-list" id="list24"></ul>
+          </div>
+          <div class="channels-card">
+            <h3>5 GHz</h3>
+            <p class="channels-reco" id="reco5">-</p>
+            <div class="channels-scores" id="scores5"></div>
+            <ul class="channels-list" id="list5"></ul>
+          </div>
+        </div>
       </section>
     </main>
 
