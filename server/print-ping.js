@@ -14,6 +14,9 @@ function execCommand(command) {
 
 function parsePingOutput(output) {
   if (!output) {
+    console.warn(
+      "[parsePingOutput] No ping output provided, returning null metrics"
+    );
     return {
       loss_pct: null,
       avg_ms: null,
@@ -34,8 +37,28 @@ function parsePingOutput(output) {
     Number.isFinite(min) && Number.isFinite(max)
       ? Number((max - min).toFixed(1))
       : null;
+
+  // Validate parsing results and log warnings if critical fields are missing
+  const lossValid = Number.isFinite(loss);
+  const rttValid = Number.isFinite(avg);
+
+  if (!lossValid && !rttValid) {
+    console.error(
+      "[parsePingOutput] Failed to parse both packet loss and RTT metrics. " +
+        "This may indicate an unexpected ping output format."
+    );
+  } else if (!lossValid) {
+    console.warn(
+      "[parsePingOutput] Failed to parse packet loss. Output may not match expected format."
+    );
+  } else if (!rttValid) {
+    console.warn(
+      "[parsePingOutput] Failed to parse RTT metrics (min/avg/max). Output may not match expected format."
+    );
+  }
+
   return {
-    loss_pct: Number.isFinite(loss) ? loss : null,
+    loss_pct: lossValid ? loss : null,
     avg_ms: Number.isFinite(avg) ? Number(avg.toFixed(1)) : null,
     min_ms: Number.isFinite(min) ? Number(min.toFixed(1)) : null,
     max_ms: Number.isFinite(max) ? Number(max.toFixed(1)) : null,
