@@ -253,11 +253,9 @@ function parseWindowsNetsh(output) {
 
 async function getWifiInfo() {
   const platform = process.platform;
-  console.log(`Detecting Wi-Fi info on platform: ${platform}`);
   if (platform === "darwin") {
     
     const wdutil = await execCommand("sudo wdutil info");
-    console.log("wdutil output:", wdutil.stdout);
     if (!wdutil.stdout && wdutil.error) {
       console.warn("wifi-heatmap: wdutil info failed", wdutil.error.message);
     }
@@ -274,9 +272,6 @@ async function getWifiInfo() {
         iface = match[1];
         ({ stdout } = await execCommand(`iw dev ${iface} link`));
       }
-    }
-    if (!stdout) {
-      console.warn("wifi-heatmap: iw link returned no data");
     }
     return parseLinuxIw(stdout);
   }
