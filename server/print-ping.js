@@ -59,7 +59,7 @@ function parsePingOutput(output) {
 
   return {
     loss_pct: lossValid ? loss : null,
-    avg_ms: rttValid ? Number(avg.toFixed(1)) : null,
+    avg_ms: Number.isFinite(avg) ? Number(avg.toFixed(1)) : null,
     min_ms: Number.isFinite(min) ? Number(min.toFixed(1)) : null,
     max_ms: Number.isFinite(max) ? Number(max.toFixed(1)) : null,
     jitter_ms: jitter,
