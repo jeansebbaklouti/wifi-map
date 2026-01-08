@@ -165,9 +165,9 @@ async function migrateLegacyData() {
   } catch {}
 }
 
-function execCommand(command) {
+function execCommand(command, timeoutMs = 2000) {
   return new Promise((resolve) => {
-    exec(command, { timeout: 2000 }, (error, stdout, stderr) => {
+    exec(command, { timeout: timeoutMs }, (error, stdout, stderr) => {
       resolve({
         stdout: stdout || "",
         stderr: stderr || "",
@@ -175,6 +175,79 @@ function execCommand(command) {
       });
     });
   });
+}
+
+function parsePingOutput(output) {
+  if (!output) {
+    return {
+      loss_pct: null,
+      avg_ms: null,
+      min_ms: null,
+      max_ms: null,
+      jitter_ms: null,
+    };
+  }
+  const lossMatch = /(\d+(?:\.\d+)?)%\s*packet loss/.exec(output);
+  const rttMatch =
+    /round-trip.*?=\s*([\d.]+)\/([\d.]+)\/([\d.]+)\/([\d.]+)\s*ms/.exec(output) ||
+    /rtt.*?=\s*([\d.]+)\/([\d.]+)\/([\d.]+)\/([\d.]+)\s*ms/.exec(output);
+  const loss = lossMatch ? Number(lossMatch[1]) : null;
+  const min = rttMatch ? Number(rttMatch[1]) : null;
+  const avg = rttMatch ? Number(rttMatch[2]) : null;
+  const max = rttMatch ? Number(rttMatch[3]) : null;
+  const jitter =
+    Number.isFinite(min) && Number.isFinite(max)
+      ? Number((max - min).toFixed(1))
+      : null;
+  return {
+    loss_pct: Number.isFinite(loss) ? loss : null,
+    avg_ms: Number.isFinite(avg) ? Number(avg.toFixed(1)) : null,
+    min_ms: Number.isFinite(min) ? Number(min.toFixed(1)) : null,
+    max_ms: Number.isFinite(max) ? Number(max.toFixed(1)) : null,
+    jitter_ms: jitter,
+  };
+}
+
+async function getGatewayIp() {
+  if (process.platform !== "darwin") return null;
+  const route = await execCommand("route -n get default");
+  const gateway =
+    /gateway:\s+([0-9.]+)/.exec(route.stdout)?.[1] ||
+    /gateway:\s+([0-9.]+)/.exec(route.stderr)?.[1] ||
+    null;
+  if (gateway) return gateway;
+
+  const netstat = await execCommand("netstat -rn");
+  const line = netstat.stdout
+    .split("\n")
+    .map((row) => row.trim())
+    .find((row) => row.startsWith("default") || row.startsWith("0.0.0.0"));
+  if (!line) return null;
+  const parts = line.split(/\s+/);
+  return parts[1] || null;
+}
+
+async function pingGateway(gatewayIp) {
+  if (!gatewayIp || process.platform !== "darwin") {
+    return {
+      ping_gateway: gatewayIp || null,
+      ping_loss_pct: null,
+      ping_avg_ms: null,
+      ping_min_ms: null,
+      ping_max_ms: null,
+      ping_jitter_ms: null,
+    };
+  }
+  const ping = await execCommand(`ping -c 8 -W 1000 ${gatewayIp}`, 12000);
+  const stats = parsePingOutput(ping.stdout || ping.stderr || "");
+  return {
+    ping_gateway: gatewayIp,
+    ping_loss_pct: stats.loss_pct,
+    ping_avg_ms: stats.avg_ms,
+    ping_min_ms: stats.min_ms,
+    ping_max_ms: stats.max_ms,
+    ping_jitter_ms: stats.jitter_ms,
+  };
 }
 
 function parseBandFromFreq(freq) {
@@ -192,6 +265,31 @@ function parseBandFromChannel(channel) {
   return "5";
 }
 
+function parseWdutilChannelInfo(channelLine) {
+  if (!channelLine) return { band: null, channel: null, width: null };
+  const bandMatch = /(2g|5g|6g|2ghz|5ghz|6ghz)/i.exec(channelLine);
+  const channelMatch = /(\d{1,3})/.exec(channelLine);
+  const widthMatch =
+    /(\d{2,3})\s*mhz/i.exec(channelLine) ||
+    /\/(\d{1,3})/.exec(channelLine);
+  const channel = channelMatch ? Number(channelMatch[1]) : null;
+  const width = widthMatch ? Number(widthMatch[1]) : null;
+  let band = null;
+  if (bandMatch) {
+    const token = bandMatch[1].toLowerCase();
+    if (token.startsWith("2")) band = "2.4";
+    if (token.startsWith("5")) band = "5";
+    if (token.startsWith("6")) band = "6";
+  } else if (channel) {
+    band = parseBandFromChannel(channel);
+  }
+  return {
+    band,
+    channel,
+    width: Number.isFinite(width) ? width : null,
+  };
+}
+
 function parseMacAirport(output) {
   const ssid = /\n\s*SSID: (.+)/.exec(output)?.[1]?.trim() || null;
   const rssiRaw = /\n\s*agrCtlRSSI: (-?\d+)/.exec(output)?.[1];
@@ -199,7 +297,7 @@ function parseMacAirport(output) {
   const rssi = rssiRaw ? Number(rssiRaw) : null;
   return {
     ssid,
-    rssi,
+    rssi_dbm: Number.isFinite(rssi) ? rssi : null,
     band: parseBandFromChannel(channel),
   };
 }
@@ -216,13 +314,24 @@ function parseBandFromWdutilChannel(channel) {
 
 function parseMacWdutil(output) {
   const ssid = /\n\s*SSID\s*:\s*(.+)/.exec(output)?.[1]?.trim() || null;
+  const bssid = /\n\s*BSSID\s*:\s*([0-9a-f:]+)/i.exec(output)?.[1] || null;
   const rssiRaw = /\n\s*RSSI\s*:\s*(-?\d+)/.exec(output)?.[1];
-  const channel = /\n\s*Channel\s*:\s*([^\n]+)/.exec(output)?.[1]?.trim();
-  const rssi = rssiRaw ? Number(rssiRaw) : null;
+  const noiseRaw = /\n\s*Noise\s*:\s*(-?\d+)/.exec(output)?.[1];
+  const signalNoiseRaw = /\n\s*Signal\s*\/\s*Noise\s*:\s*(-?\d+)\s*dBm\s*\/\s*(-?\d+)/i.exec(
+    output
+  );
+  const channelLine = /\n\s*Channel\s*:\s*([^\n]+)/.exec(output)?.[1]?.trim();
+  const rssi = rssiRaw ? Number(rssiRaw) : signalNoiseRaw ? Number(signalNoiseRaw[1]) : null;
+  const noise = noiseRaw ? Number(noiseRaw) : signalNoiseRaw ? Number(signalNoiseRaw[2]) : null;
+  const channelInfo = parseWdutilChannelInfo(channelLine || "");
   return {
     ssid,
-    rssi,
-    band: parseBandFromWdutilChannel(channel),
+    bssid,
+    rssi_dbm: Number.isFinite(rssi) ? rssi : null,
+    noise_dbm: Number.isFinite(noise) ? noise : null,
+    band: channelInfo.band || parseBandFromWdutilChannel(channelLine || ""),
+    channel: channelInfo.channel,
+    channel_width_mhz: channelInfo.width,
   };
 }
 
@@ -234,7 +343,7 @@ function parseLinuxIw(output) {
   const freq = freqRaw ? Number(freqRaw) : null;
   return {
     ssid,
-    rssi,
+    rssi_dbm: Number.isFinite(rssi) ? rssi : null,
     band: parseBandFromFreq(freq),
   };
 }
@@ -246,7 +355,7 @@ function parseWindowsNetsh(output) {
   const rssi = signalPct === null ? null : Math.round(signalPct / 2 - 100);
   return {
     ssid,
-    rssi,
+    rssi_dbm: Number.isFinite(rssi) ? rssi : null,
     band: null,
   };
 }
@@ -281,7 +390,15 @@ async function getWifiInfo() {
     return parseWindowsNetsh(stdout);
   }
 
-  return { ssid: null, rssi: null, band: null };
+  return {
+    ssid: null,
+    bssid: null,
+    rssi_dbm: null,
+    noise_dbm: null,
+    band: null,
+    channel: null,
+    channel_width_mhz: null,
+  };
 }
 
 app.get("/api/meta", async (req, res) => {
@@ -289,8 +406,20 @@ app.get("/api/meta", async (req, res) => {
   res.json({
     ssid: info.ssid,
     band: info.band,
-    rssi: info.rssi,
+    rssi: info.rssi_dbm ?? info.rssi ?? null,
     mode: MODE,
+  });
+});
+
+app.get("/api/metrics", (req, res) => {
+  res.json({
+    metrics: [
+      { key: "rssi_dbm", label: "RSSI (dBm)", good: -50, bad: -80 },
+      { key: "snr_db", label: "SNR (dB)", good: 25, bad: 10 },
+      { key: "ping_avg_ms", label: "Latency to router (ms)", good: 2, bad: 30 },
+      { key: "ping_jitter_ms", label: "Jitter (ms)", good: 2, bad: 20 },
+      { key: "ping_loss_pct", label: "Packet loss (%)", good: 0, bad: 10 },
+    ],
   });
 });
 
@@ -370,21 +499,42 @@ app.post("/api/floorplan", async (req, res) => {
 });
 
 app.post("/api/sample", async (req, res) => {
-  const { x, y, project } = req.body || {};
+  const { x, y, project, note } = req.body || {};
   if (typeof x !== "number" || typeof y !== "number") {
     res.status(400).json({ error: "x and y are required numbers" });
     return;
   }
   const projectId = await getProjectId(project);
   const info = await getWifiInfo();
+  const gatewayIp = await getGatewayIp();
+  const pingStats = await pingGateway(gatewayIp);
+  const rssiDbm = info.rssi_dbm ?? info.rssi ?? null;
+  const noiseDbm = info.noise_dbm ?? null;
+  const snrDb =
+    typeof rssiDbm === "number" && typeof noiseDbm === "number"
+      ? Number((rssiDbm - noiseDbm).toFixed(1))
+      : null;
   const samples = await readSamples(projectId);
   const sample = {
     id: Date.now(),
+    t: Date.now(),
     x,
     y,
-    rssi: info.rssi,
-    band: info.band,
     ssid: info.ssid,
+    bssid: info.bssid ?? null,
+    band: info.band,
+    channel: info.channel ?? null,
+    channel_width_mhz: info.channel_width_mhz ?? null,
+    rssi_dbm: rssiDbm,
+    noise_dbm: noiseDbm,
+    snr_db: snrDb,
+    ping_gateway: pingStats.ping_gateway,
+    ping_loss_pct: pingStats.ping_loss_pct,
+    ping_avg_ms: pingStats.ping_avg_ms,
+    ping_min_ms: pingStats.ping_min_ms,
+    ping_max_ms: pingStats.ping_max_ms,
+    ping_jitter_ms: pingStats.ping_jitter_ms,
+    note: typeof note === "string" ? note.trim() : "",
     createdAt: new Date().toISOString(),
   };
   samples.push(sample);
