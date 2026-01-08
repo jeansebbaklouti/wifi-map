@@ -39,28 +39,27 @@ function parsePingOutput(output) {
       : null;
 
   // Validate parsing results and log warnings if critical fields are missing
-  const hasLoss = Number.isFinite(loss);
-  const hasRtt = Number.isFinite(avg);
+  const lossValid = Number.isFinite(loss);
+  const rttValid = Number.isFinite(avg);
 
-  if (!hasLoss && !hasRtt) {
+  if (!lossValid && !rttValid) {
     console.error(
       "[parsePingOutput] Failed to parse both packet loss and RTT metrics. " +
-        "This may indicate an unexpected ping output format. Output sample: " +
-        output.substring(0, 200)
+        "This may indicate an unexpected ping output format."
     );
-  } else if (!hasLoss) {
+  } else if (!lossValid) {
     console.warn(
       "[parsePingOutput] Failed to parse packet loss. Output may not match expected format."
     );
-  } else if (!hasRtt) {
+  } else if (!rttValid) {
     console.warn(
       "[parsePingOutput] Failed to parse RTT metrics (min/avg/max). Output may not match expected format."
     );
   }
 
   return {
-    loss_pct: Number.isFinite(loss) ? loss : null,
-    avg_ms: Number.isFinite(avg) ? Number(avg.toFixed(1)) : null,
+    loss_pct: lossValid ? loss : null,
+    avg_ms: rttValid ? Number(avg.toFixed(1)) : null,
     min_ms: Number.isFinite(min) ? Number(min.toFixed(1)) : null,
     max_ms: Number.isFinite(max) ? Number(max.toFixed(1)) : null,
     jitter_ms: jitter,
